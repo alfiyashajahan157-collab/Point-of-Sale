@@ -4,7 +4,7 @@ import { SafeAreaView } from '@components/containers';
 import { COLORS } from '@constants/theme';
 import { NavigationHeader } from '@components/Header';
 import { Button } from '@components/common/Button';
-import { fetchPaymentJournalsOdoo, createAccountPaymentOdoo, fetchPOSSessions, validatePosOrderOdoo, updatePosOrderOdoo } from '@api/services/generalApi';
+import { fetchPaymentJournalsOdoo, createAccountPaymentOdoo, fetchPOSSessions, validatePosOrderOdoo, updatePosOrderOdoo, fetchCustomerAccountPaymentMethod } from '@api/services/generalApi';
 import { createPosOrderOdoo, createPosPaymentOdoo } from '@api/services/generalApi';
 import axios from 'axios';
 import ODOO_BASE_URL from '@api/config/odooConfig';
@@ -19,7 +19,7 @@ const fetchAllPaymentMethods = async () => {
         model: 'pos.payment.method',
         method: 'search_read',
         args: [[]],
-        kwargs: { fields: ['id', 'name', 'journal_id', 'is_cash_count', 'receivable_account_id', 'split_transactions'], limit: 100 },
+        kwargs: { fields: ['id', 'name', 'journal_id', 'is_cash_count', 'receivable_account_id', 'split_transactions', 'type'], limit: 100 },
       },
     }, { headers: { 'Content-Type': 'application/json' } });
     const methods = response.data?.result || [];
@@ -34,6 +34,7 @@ const fetchAllPaymentMethods = async () => {
     return [];
   }
 };
+
   // Helper to fetch payment method id for a journal
   const fetchPaymentMethodId = async (journalId) => {
     try {
@@ -91,6 +92,7 @@ const POSPayment = ({ navigation, route }) => {
   const [selectedJournal, setSelectedJournal] = useState(null);
   const [paying, setPaying] = useState(false);
   const { clearProducts } = useProductStore();
+  const [inputAmount, setInputAmount] = useState('');
 
   // Map journals to Odoo-style payment modes (cash / card / customer account)
   const getJournalForMode = (mode) => {
@@ -104,8 +106,9 @@ const POSPayment = ({ navigation, route }) => {
       return journals.find(j => j.type === 'bank') || byName('card') || byName('visa') || byName('master');
     }
     if (mode === 'account') {
-      // Prefer receivable/sale journals or ones with 'account' wording
-      return journals.find(j => j.type === 'sale') || journals.find(j => j.type === 'receivable') || byName('account') || journals[0];
+      // For customer account, look for journals with 'customer' or 'account' in name
+      // Also check for receivable type journals
+      return byName('customer') || byName('account') || journals.find(j => j.type === 'sale') || journals.find(j => j.type === 'receivable') || journals[0];
     }
     return null;
   };
@@ -143,9 +146,6 @@ const POSPayment = ({ navigation, route }) => {
     }
     return (products || []).reduce((s, p) => s + ((p.price || 0) * (p.quantity || p.qty || 0)), 0);
   };
-  
-  const [inputAmount, setInputAmount] = useState('');
-  
   const paidAmount = parseFloat(inputAmount) || 0;
   const total = computeTotal();
   const remaining = total - paidAmount;
@@ -233,32 +233,23 @@ const POSPayment = ({ navigation, route }) => {
         }
       }
 
-      // Create payment in Odoo for cash or card mode
-      if ((paymentMode === 'cash' || paymentMode === 'card') && selectedJournal) {
+      // Create payment in Odoo for all payment modes (cash, card, account)
+      if (paymentMode === 'account') {
+        // For Customer Account, fetch the payment method directly (not via journal)
         try {
-          // Fetch payment method id for selected journal
-          const paymentMethodId = await fetchPaymentMethodId(selectedJournal.id);
-          if (!paymentMethodId) {
-            Toast.show({ type: 'error', text1: 'Payment Error', text2: 'No payment method found for selected journal', position: 'bottom' });
+          const customerAccountMethod = await fetchCustomerAccountPaymentMethod();
+          if (!customerAccountMethod) {
+            Toast.show({ type: 'error', text1: 'Payment Error', text2: 'Customer Account payment method not configured in Odoo. Please add it in POS Configuration.', position: 'bottom' });
             return;
           }
-          const payments = [];
-          // For card: use total amount; For cash: use inputAmount or total
-          const paymentAmount = paymentMode === 'card' ? total : (paidAmount || total);
           
-          payments.push({
-            amount: paymentAmount,
-            paymentMethodId,
-            journalId: selectedJournal.id,
-            paymentMode,
-          });
-          
-          console.log(`💰 ${paymentMode === 'cash' ? 'Cash' : 'Card'} payment: Amount=${paymentAmount}, Total=${total}`);
-          
-          // Log each payment record for diagnostics
-          payments.forEach((p, idx) => {
-            console.log(`[PAYMENT LOG] #${idx + 1} Amount: ${p.amount}, JournalId: ${p.journalId}, PaymentMethodId: ${p.paymentMethodId}`);
-          });
+          const payments = [{
+            amount: total,
+            paymentMethodId: customerAccountMethod.id,
+            journalId: customerAccountMethod.journal_id ? (Array.isArray(customerAccountMethod.journal_id) ? customerAccountMethod.journal_id[0] : customerAccountMethod.journal_id) : null,
+            paymentMode: 'account',
+          }];
+          console.log(`🏦 Customer Account payment: Total=${total}, Customer=${customer?.name || 'N/A'}, PaymentMethodId=${customerAccountMethod.id}`);
           
           const paymentPayload = {
             orderId: createdOrderId,
@@ -276,25 +267,101 @@ const POSPayment = ({ navigation, route }) => {
             return;
           }
           
-          // Validate/finalize the order after successful payment
-          console.log('✅ Payments created. Updating order amount_paid before validation');
-          // Update order's amount_paid field
+          // Validate/finalize the order
+          console.log('✅ Customer Account payment created. Updating and validating order', createdOrderId);
           const updateResp = await updatePosOrderOdoo(createdOrderId, { 
-            amount_paid: paymentAmount,
+            amount_paid: total,
             state: 'paid'
           });
           if (updateResp && updateResp.error) {
             console.error('Order update error:', updateResp.error);
-            Toast.show({ type: 'error', text1: 'Update Error', text2: 'Failed to update order', position: 'bottom' });
-            return;
           }
-          console.log('✅ Order updated. Now validating order', createdOrderId);
           const validateResp = await validatePosOrderOdoo(createdOrderId);
           if (validateResp && validateResp.error) {
             console.error('Order validation error:', validateResp.error);
-            Toast.show({ type: 'error', text1: 'Validation Error', text2: 'Payment created but order validation failed', position: 'bottom' });
           } else {
             console.log('✅ Order validated successfully');
+          }
+        } catch (e) {
+          console.error('Customer Account payment exception:', e);
+          Toast.show({ type: 'error', text1: 'Payment Error', text2: e?.message || 'Failed to create Customer Account payment', position: 'bottom' });
+        }
+      } else if (selectedJournal) {
+        try {
+          // Fetch payment method id for selected journal
+          const paymentMethodId = await fetchPaymentMethodId(selectedJournal.id);
+          if (!paymentMethodId) {
+            Toast.show({ type: 'error', text1: 'Payment Error', text2: 'No payment method found for selected journal', position: 'bottom' });
+            return;
+          }
+          const payments = [];
+          
+          if (paymentMode === 'cash') {
+            // For cash, create ONE payment for the order total
+            payments.push({
+              amount: total,
+              paymentMethodId,
+              journalId: selectedJournal.id,
+              paymentMode,
+            });
+            console.log(`💵 Cash payment: Total=${total}, Received=${paidAmount}, Change=${Math.abs(remaining)}`);
+          } else if (paymentMode === 'card') {
+            // For card, create payment for the order total
+            payments.push({
+              amount: total,
+              paymentMethodId,
+              journalId: selectedJournal.id,
+              paymentMode,
+            });
+            console.log(`💳 Card payment: Total=${total}`);
+          }
+          
+          // Log each payment record for diagnostics
+          payments.forEach((p, idx) => {
+            const type = p.amount > 0 ? 'RECEIVED' : 'CHANGE';
+            console.log(`[PAYMENT LOG] #${idx + 1} Type: ${type}, Amount: ${p.amount}, JournalId: ${p.journalId}, PaymentMethodId: ${p.paymentMethodId}`);
+          });
+          const paymentPayload = {
+            orderId: createdOrderId,
+            payments,
+            partnerId,
+            sessionId,
+            companyId
+          };
+          console.log('JSON-RPC payment payload:', paymentPayload);
+          const paymentResp = await createPosPaymentOdoo(paymentPayload);
+          console.log('Payment API response:', paymentResp);
+          if (paymentResp && paymentResp.error) {
+            console.error('Payment API error:', paymentResp.error);
+            Toast.show({ type: 'error', text1: 'Payment Error', text2: paymentResp.error.message || JSON.stringify(paymentResp.error) || 'Failed to create payment', position: 'bottom' });
+            return;
+          }
+          
+          // Validate/finalize the order after successful payment (only if fully paid)
+          const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+          console.log('💰 Total payment amount:', totalPaymentAmount, 'Order total:', total);
+          if (totalPaymentAmount >= total) {
+            console.log('✅ Payments created. Updating order amount_paid before validation');
+            // Update order's amount_paid field
+            const updateResp = await updatePosOrderOdoo(createdOrderId, { 
+              amount_paid: total,
+              state: 'paid'
+            });
+            if (updateResp && updateResp.error) {
+              console.error('Order update error:', updateResp.error);
+              Toast.show({ type: 'error', text1: 'Update Error', text2: 'Failed to update order', position: 'bottom' });
+              return;
+            }
+            console.log('✅ Order updated. Now validating order', createdOrderId);
+            const validateResp = await validatePosOrderOdoo(createdOrderId);
+            if (validateResp && validateResp.error) {
+              console.error('Order validation error:', validateResp.error);
+              Toast.show({ type: 'error', text1: 'Validation Error', text2: 'Payment created but order validation failed', position: 'bottom' });
+            } else {
+              console.log('✅ Order validated successfully');
+            }
+          } else {
+            console.log('⚠️ Payment amount does not cover order total. Order remains in draft state.');
           }
         } catch (e) {
           console.error('Payment API exception:', e);
@@ -303,17 +370,19 @@ const POSPayment = ({ navigation, route }) => {
       }
 
       // Proceed to receipt screen
-      const receiptAmount = paymentMode === 'card' ? total : (paidAmount || total);
+      console.log('🔔 Navigating to POSReceiptScreen with paymentMode:', paymentMode);
       navigation.navigate('POSReceiptScreen', {
         orderId: createdOrderId,
         products,
         customer,
-        amount: receiptAmount,
+        amount: paidAmount,
         totalAmount: total,
         invoiceChecked,
         sessionId,
-        registerName
+        registerName,
+        paymentMode  // Pass payment method type (cash, card, account)
       });
+      console.log('🔔 Navigation params sent:', { paymentMode, orderId: createdOrderId });
     } catch (e) {
       Toast.show({ type: 'error', text1: 'POS Error', text2: e?.message || 'Failed to create POS order', position: 'bottom' });
     }
@@ -323,6 +392,7 @@ const POSPayment = ({ navigation, route }) => {
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }}>
       <NavigationHeader title="Payment" onBackPress={() => navigation.goBack()} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Journal info removed — mapping remains internal */}
         {/* Large Amount Display */}
         <View style={{ alignItems: 'center', marginTop: 32, marginBottom: 12 }}>
           <Text style={{ fontSize: 60, fontWeight: 'bold', color: '#222' }}>{computeTotal().toFixed(3)} ج.ع.</Text>
@@ -332,163 +402,223 @@ const POSPayment = ({ navigation, route }) => {
         <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 18 }}>
           <TouchableOpacity onPress={async () => {
             setPaymentMode('cash');
+            // Use journal id 16 for cash
             const cashJournal = journals.find(j => j.id === 16) || journals.find(j => j.type === 'cash') || { id: 16, name: 'Cash', type: 'cash' };
             setSelectedJournal(cashJournal);
-            console.log('Cash card selected, journal id:', cashJournal.id);
+            setTimeout(async () => {
+              console.log('Cash card selected, journal id:', cashJournal.id);
+              // Fetch and log full payment method details for journal id 9
+              try {
+                const response = await axios.post(`${ODOO_BASE_URL}/web/dataset/call_kw`, {
+                  jsonrpc: '2.0',
+                  method: 'call',
+                  params: {
+                    model: 'pos.payment.method',
+                    method: 'search_read',
+                    args: [[['journal_id', '=', cashJournal.id]]],
+                    kwargs: { fields: ['id', 'name', 'journal_id', 'is_cash_count', 'receivable_account_id', 'split_transactions'], limit: 10 },
+                  },
+                }, { headers: { 'Content-Type': 'application/json' } });
+                const methods = response.data?.result || [];
+                if (methods.length > 0) {
+                  console.log('Payment method(s) for journal', cashJournal.id, ':', methods);
+                } else {
+                  console.log('No payment method found for journal', cashJournal.id);
+                }
+                  // Also fetch and log all payment methods for diagnostics
+                  await fetchAllPaymentMethods();
+              } catch (e) {
+                console.error('Error fetching payment method details:', e);
+              }
+            }, 100);
           }} style={[styles.modeCard, paymentMode === 'cash' && styles.modeCardSelected]}>
             <Text style={styles.modeCardIcon}>💵</Text>
             <Text style={[styles.modeCardText, paymentMode === 'cash' && styles.modeCardTextSelected]}>Cash</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity onPress={async () => {
             setPaymentMode('card');
+            // Always use journal id 6 for card
             const cardJournal = journals.find(j => j.id === 6) || journals.find(j => j.type === 'bank');
             setSelectedJournal(cardJournal);
-            console.log('Card payment selected, journal id:', cardJournal?.id);
+            setTimeout(async () => {
+              if (cardJournal) {
+                console.log('Card payment selected, journal id:', cardJournal.id);
+                const paymentMethodId = await fetchPaymentMethodId(cardJournal.id);
+                // This will log: Fetched payment_method_id for journal ...
+              } else {
+                console.log('Card payment selected, no journal mapped');
+              }
+            }, 100);
           }} style={[styles.modeCard, paymentMode === 'card' && styles.modeCardSelected]}>
-            <Text style={styles.modeCardIcon}>💳</Text>
-            <Text style={[styles.modeCardText, paymentMode === 'card' && styles.modeCardTextSelected]}>Card</Text>
-          </TouchableOpacity>
-          
+              <Text style={styles.modeCardIcon}>💳</Text>
+              <Text style={[styles.modeCardText, paymentMode === 'card' && styles.modeCardTextSelected]}>Card</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                setPaymentMode('card');
+                setTimeout(async () => {
+                  if (selectedJournal) {
+                    console.log('Card payment selected, journal id:', selectedJournal.id);
+                    try {
+                      const response = await axios.post(`${ODOO_BASE_URL}/web/dataset/call_kw`, {
+                        jsonrpc: '2.0',
+                        method: 'call',
+                        params: {
+                          model: 'pos.payment.method',
+                          method: 'search_read',
+                          args: [[['journal_id', '=', selectedJournal.id]]],
+                          kwargs: { fields: ['id', 'name', 'journal_id', 'is_cash_count', 'receivable_account_id', 'split_transactions'], limit: 10 },
+                        },
+                      }, { headers: { 'Content-Type': 'application/json' } });
+                      const methods = response.data?.result || [];
+                      if (methods.length > 0) {
+                        console.log('Payment method(s) for journal', selectedJournal.id, ':', methods);
+                      } else {
+                        console.log('No payment method found for journal', selectedJournal.id);
+                      }
+                      await fetchAllPaymentMethods();
+                    } catch (e) {
+                      console.error('Error fetching payment method details:', e);
+                    }
+                  } else {
+                    console.log('Card payment selected, no journal mapped');
+                  }
+                }, 100);
+              }}
+              style={{ display: 'none' }}
+            />
           <TouchableOpacity onPress={async () => {
             setPaymentMode('account');
-            console.log('Customer Account card selected');
+            setTimeout(async () => {
+              if (selectedJournal) {
+                console.log('Customer Account card selected, journal id:', selectedJournal.id);
+                await fetchPaymentMethodId(selectedJournal.id);
+              } else {
+                console.log('Customer Account card selected, no journal mapped');
+              }
+            }, 100);
           }} style={[styles.modeCard, paymentMode === 'account' && styles.modeCardSelected]}>
             <Text style={styles.modeCardIcon}>🏦</Text>
             <Text style={[styles.modeCardText, paymentMode === 'account' && styles.modeCardTextSelected]}>Customer Account</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Payment Amount Display - Card has NO keypad, Cash/Account have keypad */}
-        {paymentMode === 'card' ? (
-          // CARD MODE - No keypad, just amount
-          <View style={{ alignItems: 'center', marginBottom: 18 }}>
-            <View style={{
-              width: '80%',
-              backgroundColor: '#f6f8fa',
-              borderRadius: 18,
-              padding: 20,
-              alignItems: 'center',
-              marginBottom: 12,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.12,
-              shadowRadius: 8,
-              elevation: 4,
-            }}>
-              <Text style={{ fontSize: 26, color: '#222', marginBottom: 8, fontWeight: 'bold' }}>Card</Text>
-              <Text style={{ fontSize: 36, color: '#222', textAlign: 'center', fontWeight: 'bold' }}>
-                {total.toFixed(3)} ج.ع.
-              </Text>
-            </View>
-          </View>
-        ) : (
-          // CASH/ACCOUNT MODE - With keypad
-          <View style={{ alignItems: 'center', marginBottom: 18 }}>
-            <View style={{
-              width: '80%',
-              backgroundColor: '#f6f8fa',
-              borderRadius: 18,
-              padding: 20,
-              alignItems: 'center',
-              marginBottom: 12,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.12,
-              shadowRadius: 8,
-              elevation: 4,
-            }}>
-              {paymentMode === 'account' ? (
-                <>
-                  <Text style={{ color: '#2b6cb0', fontSize: 22, marginTop: 6 }}>Amount to be charged to account</Text>
-                  <Text style={{ color: '#2b6cb0', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{total.toFixed(3)} ج.ع.</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={{ fontSize: 26, color: '#222', marginBottom: 8, fontWeight: 'bold' }}>Cash</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-                    <Text style={{ fontSize: 36, color: '#222', textAlign: 'center', flex: 1, fontWeight: 'bold' }}>{inputAmount || '0.000'} ج.ع.</Text>
-                    {inputAmount ? (
-                      <TouchableOpacity onPress={() => setInputAmount('')} style={{ marginLeft: 8 }}>
-                        <Text style={{ fontSize: 28, color: '#c00', fontWeight: 'bold' }}>✕</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                  {remaining < 0 ? (
-                    <>
-                      <Text style={{ color: 'green', fontSize: 22, marginTop: 6 }}>Change</Text>
-                      <Text style={{ color: 'green', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{Math.abs(remaining).toFixed(3)} ج.ع.</Text>
-                    </>
+        {/* Payment Input and Keypad */}
+        <View style={{ alignItems: 'center', marginBottom: 18 }}>
+          <View style={{
+            width: '80%',
+            backgroundColor: '#f6f8fa',
+            borderRadius: 18,
+            padding: 20,
+            alignItems: 'center',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            elevation: 4,
+          }}>
+            {paymentMode === 'account' ? (
+              <>
+                <Text style={{ color: '#2b6cb0', fontSize: 22, marginTop: 6 }}>Amount to be charged to account</Text>
+                <Text style={{ color: '#2b6cb0', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{total.toFixed(3)} ج.ع.</Text>
+              </>
+            ) : paymentMode === 'card' ? (
+              <>
+                <Text style={{ color: '#2b6cb0', fontSize: 22, marginTop: 6 }}>Amount to be charged to card</Text>
+                <Text style={{ color: '#2b6cb0', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{total.toFixed(3)} ج.ع.</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 26, color: '#222', marginBottom: 8, fontWeight: 'bold' }}>Cash</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                  <Text style={{ fontSize: 36, color: '#222', textAlign: 'center', flex: 1, fontWeight: 'bold' }}>{inputAmount || '0.000'} ج.ع.</Text>
+                  {inputAmount ? (
+                    <TouchableOpacity onPress={() => setInputAmount('')} style={{ marginLeft: 8 }}>
+                      <Text style={{ fontSize: 28, color: '#c00', fontWeight: 'bold' }}>✕</Text>
+                    </TouchableOpacity>
                   ) : null}
-                </>
-              )}
-            </View>
-
-            {/* Keypad - Only for Cash and Account */}
-            <View style={{
-              backgroundColor: '#f6f8fa',
-              borderRadius: 18,
-              padding: 18,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.10,
-              shadowRadius: 6,
-              elevation: 3,
-              marginTop: 4,
-            }}>
-              {keypadRows.map((row, i) => (
-                <View key={i} style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 12 }}>
-                  {row.map((key) => {
-                    const isAction = key === 'C' || key === '⌫' || key.startsWith('+');
-                    return (
-                      <TouchableOpacity
-                        key={key}
-                        onPress={() => handleKeypad(key)}
-                        style={{
-                          width: 80,
-                          height: 64,
-                          backgroundColor: isAction ? '#2b6cb0' : '#fff',
-                          borderRadius: 14,
-                          marginHorizontal: 10,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderWidth: 1,
-                          borderColor: isAction ? '#255a95' : '#eee',
-                          shadowColor: isAction ? '#2b6cb0' : '#000',
-                          shadowOffset: { width: 0, height: 1 },
-                          shadowOpacity: isAction ? 0.18 : 0.08,
-                          shadowRadius: 4,
-                          elevation: isAction ? 2 : 1,
-                        }}
-                      >
-                        <Text style={{ fontSize: 28, color: isAction ? '#fff' : '#222', fontWeight: key.startsWith('+') || isAction ? 'bold' : 'normal' }}>{key}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
                 </View>
-              ))}
-            </View>
+                {remaining < 0 ? (
+                  <>
+                    <Text style={{ color: 'green', fontSize: 22, marginTop: 6 }}>Change</Text>
+                    <Text style={{ color: 'green', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{Math.abs(remaining).toFixed(3)} ج.ع.</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ color: '#c00', fontSize: 22, marginTop: 6 }}>Remaining</Text>
+                    <Text style={{ color: '#c00', fontSize: 26, fontWeight: 'bold', marginBottom: 8 }}>{remaining.toFixed(3)} ج.ع.</Text>
+                  </>
+                )}
+              </>
+            )}
           </View>
-        )}
+
+          {/* Keypad - Only show for Cash mode */}
+          {paymentMode === 'cash' && (
+          <View style={{
+            backgroundColor: '#f6f8fa',
+            borderRadius: 18,
+            padding: 18,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.10,
+            shadowRadius: 6,
+            elevation: 3,
+            marginTop: 4,
+          }}>
+            {keypadRows.map((row, i) => (
+              <View key={i} style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 12 }}>
+                {row.map((key) => {
+                  const isAction = key === 'C' || key === '⌫' || key.startsWith('+');
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      onPress={() => handleKeypad(key)}
+                      style={{
+                        width: 80,
+                        height: 64,
+                        backgroundColor: isAction ? '#2b6cb0' : '#fff',
+                        borderRadius: 14,
+                        marginHorizontal: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: 1,
+                        borderColor: isAction ? '#255a95' : '#eee',
+                        shadowColor: isAction ? '#2b6cb0' : '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: isAction ? 0.18 : 0.08,
+                        shadowRadius: 4,
+                        elevation: isAction ? 2 : 1,
+                      }}
+                    >
+                      <Text style={{ fontSize: 28, color: isAction ? '#fff' : '#222', fontWeight: key.startsWith('+') || isAction ? 'bold' : 'normal' }}>{key}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+          )}
+        </View>
 
         {/* Customer/Validate */}
-        <View style={{ marginHorizontal: 18, marginTop: 10 }}>
-          <TouchableOpacity onPress={openCustomerSelector} style={{
-            backgroundColor: '#f6f8fa',
-            borderRadius: 16,
-            paddingVertical: 24,
-            alignItems: 'center',
-            borderWidth: 1,
-            borderColor: '#eee',
-            elevation: 2,
-            flexDirection: 'column',
-            justifyContent: 'center',
-          }}>
-            <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#222' }}>Customer</Text>
-            <Text style={{ fontSize: 22, color: '#444', marginTop: 4 }}>{customer?.name || 'Select'}</Text>
-          </TouchableOpacity>
-        </View>
-        
+          <View style={{ marginHorizontal: 18, marginTop: 10 }}>
+            <TouchableOpacity onPress={openCustomerSelector} style={{
+              backgroundColor: '#f6f8fa',
+              borderRadius: 16,
+              paddingVertical: 24,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#eee',
+              elevation: 2,
+              flexDirection: 'column',
+              justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#222' }}>Customer</Text>
+              <Text style={{ fontSize: 22, color: '#444', marginTop: 4 }}>{customer?.name || 'Select'}</Text>
+            </TouchableOpacity>
+          </View>
         <View style={{ alignItems: 'center', marginTop: 18, marginBottom: 20 }}>
           <Button title="Validate" onPress={handlePay} style={{ width: '90%', paddingVertical: 16, borderRadius: 10 }} textStyle={{ fontSize: 20 }} />
         </View>

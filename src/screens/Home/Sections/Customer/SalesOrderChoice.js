@@ -13,12 +13,6 @@ const SalesOrderChoice = ({ navigation }) => {
         {/* Removed subtitle as requested */}
 
         <View style={styles.buttons}>
-          <TouchableOpacity style={[styles.option, styles.pos]} onPress={() => navigation.navigate('POSRegister')}>
-            
-            <Text style={styles.optionTitle}>POS</Text>
-            <Text style={styles.optionSub}>Create a POS-style order and take payment</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity style={[styles.option, styles.placeOrder]} onPress={() => navigation.navigate('CustomerScreen')}>
             <Text style={styles.optionTitle}>Place Order</Text>
             <Text style={styles.optionSub}>Choose a customer and create a sales order</Text>

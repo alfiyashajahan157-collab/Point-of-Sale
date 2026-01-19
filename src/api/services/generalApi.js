@@ -292,8 +292,25 @@ export const fetchProducts = async ({ offset, limit, categoryId, searchText }) =
 
 // 🔹 NEW: Fetch products directly from Odoo 19 via JSON-RPC
 // Reverted: Fetch products directly from Odoo 19 via JSON-RPC (ice cube shop logic)
-export const fetchProductsOdoo = async () => {
+export const fetchProductsOdoo = async ({ offset = 0, limit = 50, searchText = "", categoryId = null } = {}) => {
   try {
+    // Build domain for filtering
+    let domain = [["available_in_pos", "=", true]]; // Only POS products
+    
+    // Filter by search text (search in name and alternative name)
+    if (searchText && searchText.trim() !== "") {
+      const term = searchText.trim();
+      // Search in both name and description_sale (alternative name)
+      domain.push("|");
+      domain.push(["name", "ilike", term]);
+      domain.push(["description_sale", "ilike", term]);
+    }
+    
+    // Filter by POS category (pos_categ_ids is many2many field)
+    if (categoryId) {
+      domain.push(["pos_categ_ids", "in", [parseInt(categoryId)]]);
+    }
+
     const response = await axios.post(
       `${ODOO_BASE_URL}/web/dataset/call_kw`,
       {
@@ -302,20 +319,26 @@ export const fetchProductsOdoo = async () => {
         params: {
           model: "product.product",
           method: "search_read",
-          args: [[]],
+          args: [domain],
           kwargs: {
             fields: [
               "id",
               "name",
+              "display_name",  // Full name with variant attributes
               "default_code",
               "list_price",
               "qty_available",
               "image_128",
               "image_1920",
-              "categ_id"
+              "categ_id",
+              "pos_categ_ids",
+              "description_sale",  // Alternative name / Arabic name
+              "barcode",
+              "product_tmpl_id"
             ],
-            limit: 50,
-            order: "id asc"
+            offset,
+            limit,
+            order: "name asc"
           }
         }
       },
@@ -332,10 +355,22 @@ export const fetchProductsOdoo = async () => {
     const results = response.data.result || [];
     const baseUrl = (ODOO_BASE_URL || '').replace(/\/$/, '');
 
-    // Attach image_url to each product
+    // Attach image_url and product_name to each product
     results.forEach(p => {
       const hasBase64 = p.image_128 && typeof p.image_128 === 'string' && p.image_128.length > 0;
       p.image_url = hasBase64 ? `data:image/png;base64,${p.image_128}` : `${baseUrl}/web/image?model=product.product&id=${p.id}&field=image_128`;
+      
+      // Use display_name for proper variant naming, fallback to name
+      // display_name includes variant attributes like "[Size] Product Name"
+      p.product_name = p.display_name || p.name;
+      
+      // If display_name equals name, try to make it unique with default_code
+      if (p.display_name === p.name && p.default_code) {
+        p.product_name = `${p.name} [${p.default_code}]`;
+      }
+      
+      // Alternative name from description_sale field
+      p.alternative_name = p.description_sale || null;
     });
 
     return results;
@@ -365,8 +400,7 @@ export const fetchUserApiToken = async (uid) => {
 // `name ilike` only when a searchText is provided.
 export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText = "" } = {}) => {
   try {
-    // Default to no domain (fetch categories). If you want only top-level categories,
-    // you can use `['parent_id', '=', false]` instead.
+    // Default to no domain (fetch categories)
     let domain = [];
 
     // If a search term is provided, filter by category name
@@ -375,21 +409,21 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
       domain = [["name", "ilike", term]]; // Filter by category name
     }
 
-    // API call to Odoo to fetch the categories
+    // API call to Odoo to fetch POS categories (pos.category has image fields)
     const response = await axios.post(
-      `${ODOO_BASE_URL}/web/dataset/call_kw`, // Odoo API URL
+      `${ODOO_BASE_URL}/web/dataset/call_kw`,
       {
         jsonrpc: "2.0",
         method: "call",
         params: {
-          model: "product.category", // Odoo model for categories
+          model: "pos.category", // POS category model with images
           method: "search_read",
-          args: [domain], // Domain filter for categories
+          args: [domain],
           kwargs: {
-            fields: ["id", "name"], // Fields you want to fetch from Odoo
-            offset, // Pagination
-            limit, // Pagination
-            order: "name asc", // Sorting
+            fields: ["id", "name", "parent_id", "image_128"], // pos.category has image_128
+            offset,
+            limit,
+            order: "sequence, name asc",
           },
         },
       },
@@ -400,21 +434,37 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
 
     // Handle any errors from the Odoo API
     if (response.data.error) {
-      console.log("Odoo JSON-RPC error (categories):", response.data.error);
+      console.log("Odoo JSON-RPC error (pos.category):", response.data.error);
       throw new Error("Odoo JSON-RPC error");
     }
 
-    // Map the categories into a usable format
+    // Map the categories into a usable format with image URL
     const categories = response.data.result || [];
-    return categories.map(category => ({
-      _id: category.id,
-      name: category.name || "",
-      // keep backward-compatible key expected by CategoryList
-      category_name: category.name || "",
-    }));
+    return categories.map(category => {
+      // pos.category has image_128 field - Odoo returns `false` for empty images
+      const base64Image = category.image_128 && category.image_128 !== false 
+        ? category.image_128 
+        : null;
+      
+      // Construct image URL from base64 data
+      let image_url = null;
+      if (base64Image && typeof base64Image === 'string' && base64Image.length > 0) {
+        image_url = `data:image/png;base64,${base64Image}`;
+      }
+
+      return {
+        _id: category.id,
+        id: category.id,
+        name: category.name || "",
+        category_name: category.name || "",
+        parent_id: category.parent_id || null,
+        image_url: image_url,
+        has_image: !!base64Image,
+      };
+    });
   } catch (error) {
-    console.error("Error fetching categories from Odoo:", error);
-    throw error; // Ensure errors are thrown to be caught by the calling function
+    console.error("Error fetching POS categories from Odoo:", error);
+    throw error;
   }
 };
 
@@ -2125,5 +2175,74 @@ export const deleteDiscountOdoo = async ({ id } = {}) => {
   } catch (error) {
     console.error('deleteDiscountOdoo error:', error);
     return { error };
+  }
+};
+
+// Fetch Customer Account payment method from pos.payment.method
+export const fetchCustomerAccountPaymentMethod = async () => {
+  try {
+    console.log('🔍 Fetching Customer Account payment method...');
+    
+    const response = await axios.post(
+      `${ODOO_BASE_URL}/web/dataset/call_kw`,
+      {
+        jsonrpc: '2.0',
+        method: 'call',
+        params: {
+          model: 'pos.payment.method',
+          method: 'search_read',
+          args: [[]],
+          kwargs: { 
+            fields: ['id', 'name', 'journal_id', 'type', 'receivable_account_id'], 
+            limit: 100 
+          },
+        },
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    
+    const allMethods = response.data?.result || [];
+    
+    console.log('=== ALL POS PAYMENT METHODS ===');
+    allMethods.forEach((m, i) => {
+      console.log(`[${i}] ID: ${m.id}, Name: "${m.name}", Type: ${m.type}, Journal: ${JSON.stringify(m.journal_id)}`);
+    });
+    
+    if (allMethods.length === 0) {
+      console.log('⚠️ No payment methods returned from API');
+      return null;
+    }
+    
+    // Find Customer Account - try exact match first
+    let customerAccountMethod = allMethods.find(m => 
+      m.name && m.name.toLowerCase() === 'customer account'
+    );
+    
+    // If not found, try partial match
+    if (!customerAccountMethod) {
+      customerAccountMethod = allMethods.find(m => 
+        m.name && (
+          m.name.toLowerCase().includes('customer') ||
+          m.name.toLowerCase().includes('credit') ||
+          m.type === 'pay_later'
+        )
+      );
+    }
+    
+    // If still not found, try to find one without a journal (typical for customer account)
+    if (!customerAccountMethod) {
+      customerAccountMethod = allMethods.find(m => !m.journal_id || m.journal_id === false);
+    }
+    
+    if (customerAccountMethod) {
+      console.log('✅ Found Customer Account payment method:', customerAccountMethod);
+      return customerAccountMethod;
+    } else {
+      console.log('❌ No Customer Account payment method found. Available methods:', allMethods.map(m => m.name));
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ fetchCustomerAccountPaymentMethod error:', error);
+    return null;
   }
 };

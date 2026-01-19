@@ -31,6 +31,17 @@ const CreateInvoicePreview = ({ navigation, route }) => {
   const cashDisplay = paidAmount > 0 ? paidAmount : grandTotal;
   const changeAmount = paidAmount > grandTotal ? (paidAmount - grandTotal) : 0;
 
+  // Payment mode from params
+  const paymentMode = params.paymentMode || 'cash';
+  
+  // Payment label based on mode
+  let paymentLabel = 'Cash';
+  if (paymentMode === 'card') {
+    paymentLabel = 'Card';
+  } else if (paymentMode === 'account') {
+    paymentLabel = 'Customer Account';
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
       <NavigationHeader title="Invoice Preview" onBackPress={() => navigation.goBack()} />
@@ -91,14 +102,17 @@ const CreateInvoicePreview = ({ navigation, route }) => {
           <Text style={styles.paymentTitle}>Payment Details / تفاصيل الدفع</Text>
           
           <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Cash:</Text>
+            <Text style={styles.paymentLabel}>{paymentLabel}:</Text>
             <Text style={styles.paymentValue}>{cashDisplay.toFixed(3)} ر.ع.</Text>
           </View>
 
-          <View style={styles.paymentRow}>
-            <Text style={styles.paymentLabel}>Change / الباقي:</Text>
-            <Text style={styles.paymentValue}>{changeAmount.toFixed(3)} ر.ع.</Text>
-          </View>
+          {/* Only show Change for Cash payments */}
+          {paymentMode === 'cash' && (
+            <View style={styles.paymentRow}>
+              <Text style={styles.paymentLabel}>Change / الباقي:</Text>
+              <Text style={styles.paymentValue}>{changeAmount.toFixed(3)} ر.ع.</Text>
+            </View>
+          )}
           
           <View style={styles.divider} />
         </View>
@@ -107,7 +121,7 @@ const CreateInvoicePreview = ({ navigation, route }) => {
           <TouchableOpacity 
             onPress={async () => {
               try {
-                  const html = generateInvoiceHtml({ items, subtotal, tax, service, total, orderId, paidAmount });
+                  const html = generateInvoiceHtml({ items, subtotal, tax, service, total, orderId, paidAmount, paymentMode, paymentLabel });
                 const { uri } = await Print.printToFileAsync({ html });
                 if (!uri) throw new Error('Failed to generate PDF');
                 await Sharing.shareAsync(uri);
@@ -125,7 +139,7 @@ const CreateInvoicePreview = ({ navigation, route }) => {
 };
 
 // Rich HTML generator to mimic Odoo POS receipt (80mm thermal, bilingual layout, dotted separators)
-const generateInvoiceHtml = ({ items = [], subtotal = 0, tax = 0, service = 0, total = 0, orderId = '', paidAmount = 0 } = {}) => {
+const generateInvoiceHtml = ({ items = [], subtotal = 0, tax = 0, service = 0, total = 0, orderId = '', paidAmount = 0, paymentMode = 'cash', paymentLabel = 'Cash' } = {}) => {
   const rows = items.map((item, idx) => {
     const itemQty = item.qty || item.quantity || 1;
     const itemPrice = item.price || item.unit || item.price_unit || 0;
@@ -218,8 +232,8 @@ const generateInvoiceHtml = ({ items = [], subtotal = 0, tax = 0, service = 0, t
 
       <div style="border-top:1px solid #000; margin-top:8px; padding-top:6px;"></div>
       <div class="paymentTitle">Payment Details / تفاصيل الدفع</div>
-      <div class="paymentRow"><div>Cash:</div><div>${Number(paidAmount > 0 ? paidAmount : (total || subtotal)).toFixed(3)} ر.ع.</div></div>
-      <div class="paymentRow"><div>Change / الباقي:</div><div>${Number((paidAmount > (total || subtotal) ? (paidAmount - (total || subtotal)) : 0)).toFixed(3)} ر.ع.</div></div>
+      <div class="paymentRow"><div>${paymentLabel}:</div><div>${Number(paidAmount > 0 ? paidAmount : (total || subtotal)).toFixed(3)} ر.ع.</div></div>
+      ${paymentMode === 'cash' ? `<div class="paymentRow"><div>Change / الباقي:</div><div>${Number((paidAmount > (total || subtotal) ? (paidAmount - (total || subtotal)) : 0)).toFixed(3)} ر.ع.</div></div>` : ''}
 
       <div style="height:8px; border-bottom:1px dotted #000; margin-top:8px;"></div>
       <div class="footer">Thank you for your purchase!<br/>شكرا لشرائك!</div>
