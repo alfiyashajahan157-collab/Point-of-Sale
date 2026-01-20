@@ -5,10 +5,10 @@ import {
   StyleSheet,
   ActivityIndicator,
   BackHandler,
-  Pressable,
   Text,
   TouchableOpacity,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import {
   CarouselPagination,
@@ -26,20 +26,18 @@ import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useAuthStore } from '@stores/auth';
 import { OverlayLoader } from "@components/Loader";
 
-const { height } = Dimensions.get("window");
-
-// Category Item Component
-const CategoryItem = ({ item, onPress }) => {
+// Category Item Component with responsive sizing
+const CategoryItem = ({ item, onPress, isTablet }) => {
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const categoryIcon = require('@assets/icons/bottom_tabs/category.png');
   
   const displayName = item?.name || item?.category_name || 'Category';
-  const truncatedName = displayName.length > 12 
-    ? displayName.substring(0, 11) + '...' 
+  const maxLength = isTablet ? 16 : 12;
+  const truncatedName = displayName.length > maxLength 
+    ? displayName.substring(0, maxLength - 1) + '...' 
     : displayName;
 
-  // Check if we have a valid image URL (not false, null, or empty)
   const hasValidImage = item?.image_url && 
     item.image_url !== false && 
     item.image_url !== 'false' &&
@@ -51,8 +49,19 @@ const CategoryItem = ({ item, onPress }) => {
     setImageError(true);
   };
 
+  // Responsive sizes
+  const imageSize = isTablet ? 70 : 50;
+  const itemMinHeight = isTablet ? 140 : 110;
+  const fontSize = isTablet ? 14 : 12;
+
   return (
-    <TouchableOpacity onPress={onPress} style={styles.categoryItem}>
+    <TouchableOpacity 
+      onPress={onPress} 
+      style={[
+        styles.categoryItem, 
+        { minHeight: itemMinHeight, margin: isTablet ? 10 : 6, padding: isTablet ? 16 : 12 }
+      ]}
+    >
       {imageLoading && hasValidImage && (
         <ActivityIndicator 
           size="small" 
@@ -60,11 +69,11 @@ const CategoryItem = ({ item, onPress }) => {
           style={styles.imageLoader} 
         />
       )}
-      <View style={styles.imageContainer}>
+      <View style={[styles.imageContainer, { width: imageSize, height: imageSize }]}>
         {hasValidImage ? (
           <Image
             source={{ uri: item.image_url }}
-            style={styles.categoryImage}
+            style={[styles.categoryImage, { width: imageSize, height: imageSize }]}
             onLoad={() => setImageLoading(false)}
             onError={handleImageError}
             resizeMode="contain"
@@ -72,12 +81,12 @@ const CategoryItem = ({ item, onPress }) => {
         ) : (
           <Image
             source={categoryIcon}
-            style={[styles.categoryImage, styles.categoryIconFallback]}
+            style={[styles.categoryImage, styles.categoryIconFallback, { width: imageSize, height: imageSize }]}
             resizeMode="contain"
           />
         )}
       </View>
-      <Text style={styles.categoryName} numberOfLines={2}>{truncatedName}</Text>
+      <Text style={[styles.categoryName, { fontSize }]} numberOfLines={2}>{truncatedName}</Text>
     </TouchableOpacity>
   );
 };
@@ -99,7 +108,11 @@ const HomeScreen = ({ navigation }) => {
   const [backPressCount, setBackPressCount] = useState(0);
   const isFocused = useIsFocused();
   
-  // Changed: Fetch Categories from Odoo instead of Products
+  // Get responsive dimensions
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const numColumns = isTablet ? 4 : 3;
+  
   const { data, loading, fetchData, fetchMoreData } =
     useDataFetching(fetchCategoriesOdoo);
 
@@ -171,7 +184,6 @@ const HomeScreen = ({ navigation }) => {
     }
   }, [authUser]);
 
-  // Handle category press - navigate to Products screen filtered by category
   const handleCategoryPress = (category) => {
     console.log('[Home] Selected category:', category);
     navigation.navigate('Products', { 
@@ -182,12 +194,13 @@ const HomeScreen = ({ navigation }) => {
 
   const renderItem = ({ item }) => {
     if (item.empty) {
-      return <View style={[styles.categoryItem, styles.itemInvisible]} />;
+      return <View style={[styles.categoryItem, styles.itemInvisible, { margin: isTablet ? 10 : 6 }]} />;
     }
     return (
       <CategoryItem
         item={item}
         onPress={() => handleCategoryPress(item)}
+        isTablet={isTablet}
       />
     );
   };
@@ -196,51 +209,65 @@ const HomeScreen = ({ navigation }) => {
     navigation.navigate(screenName);
   };
 
+  // Responsive snap points
   const snapPoints = useMemo(() => {
-    if (height < 700) {
-      return ["39%", "80%"];
-    } else if (height < 800) {
-      return ["41%", "82%"];
-    } else if (height < 900) {
-      return ["43%", "85%"];
-    } else {
-      return ["45%", "90%"];
+    if (isTablet) {
+      return ["43%", "75%"];
     }
-  }, [height]);
+    if (height < 700) {
+      return ["47%", "80%"];
+    } else if (height < 800) {
+      return ["49%", "82%"];
+    } else if (height < 900) {
+      return ["51%", "85%"];
+    } else {
+      return ["53%", "90%"];
+    }
+  }, [height, isTablet]);
 
   const [detailLoading] = useLoader(false);
+
+  // Responsive styles
+  const carouselMargin = isTablet ? { marginTop: -40, marginBottom: -12 } : { marginTop: -48, marginBottom: -16 };
+  const buttonsMargin = isTablet ? { marginTop: 28, marginBottom: 16, paddingHorizontal: 40 } : { marginTop: 24, marginBottom: 12, paddingHorizontal: 20 };
 
   return (
     <SafeAreaView backgroundColor={COLORS.primaryThemeColor}>
       <RoundedContainer>
         <Header />
-        <View style={{ marginTop: -20, marginBottom: -8 }}>
+        <View style={carouselMargin}>
           <CarouselPagination />
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginVertical: 12, paddingHorizontal: 20 }}>
+        {/* Action Buttons - Responsive */}
+        <View style={[{ flexDirection: 'row', justifyContent: 'center', gap: isTablet ? 40 : 20 }, buttonsMargin]}>
           <ListItem
             title="Sales Order"
             image={require('@assets/images/Home/section/service.png')}
             onPress={() => navigateToScreen('SalesOrderChoice')}
+            style={isTablet ? { width: 140, height: 140 } : {}}
           />
           <ListItem
             title="POS"
             image={require('@assets/images/Home/section/possss.png')}
             onPress={() => navigateToScreen('POSRegister')}
+            style={isTablet ? { width: 140, height: 140 } : {}}
           />
         </View>
 
-        <BottomSheet snapPoints={snapPoints} style={{ marginTop: 12 }}>
-          {/* Changed: Title from "Products" to "Categories" */}
+        <BottomSheet snapPoints={snapPoints} style={{ marginTop: isTablet ? 8 : 12 }}>
           <ListHeader title="Categories" />
           <BottomSheetFlatList
-            data={formatData(data, 3)}
-            numColumns={3}
-            initialNumToRender={9}
+            key={numColumns}
+            data={formatData(data, numColumns)}
+            numColumns={numColumns}
+            initialNumToRender={isTablet ? 12 : 9}
             renderItem={renderItem}
             keyExtractor={(item, index) => (item._id || item.id || index).toString()}
-            contentContainerStyle={{ paddingBottom: '25%', paddingHorizontal: 8 }}
+            contentContainerStyle={{ 
+              paddingBottom: '25%', 
+              paddingHorizontal: isTablet ? 16 : 8,
+            }}
             onEndReached={handleLoadMore}
             showsVerticalScrollIndicator={false}
             onEndReachedThreshold={0.2}
@@ -248,7 +275,7 @@ const HomeScreen = ({ navigation }) => {
             ListEmptyComponent={
               !loading && (
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No categories available</Text>
+                  <Text style={[styles.emptyText, isTablet && { fontSize: 16 }]}>No categories available</Text>
                 </View>
               )
             }
@@ -258,33 +285,6 @@ const HomeScreen = ({ navigation }) => {
         <OverlayLoader visible={detailLoading} />
 
       </RoundedContainer>
-      
-      {/* Bottom Navigation - Three Buttons */}
-      <View pointerEvents="box-none" style={styles.bottomNavigation}>
-        {/* Home Button */}
-        <Pressable
-          onPress={() => navigateToScreen("Home")}
-          style={({ pressed }) => [styles.navButton, styles.navButtonActive, pressed && styles.navPressed]}
-        >
-          <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
-        </Pressable>
-
-        {/* Category Button (Center) */}
-        <Pressable
-          onPress={() => navigateToScreen("Categories")}
-          style={({ pressed }) => [styles.navButton, pressed && styles.navPressed]}
-        >
-          <Text style={styles.navLabel}>Category</Text>
-        </Pressable>
-
-        {/* Profile Button */}
-        <Pressable
-          onPress={() => navigateToScreen("Profile")}
-          style={({ pressed }) => [styles.navButton, pressed && styles.navPressed]}
-        >
-          <Text style={styles.navLabel}>Profile</Text>
-        </Pressable>
-      </View>
     </SafeAreaView>
   );
 };
@@ -297,7 +297,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   
-  // Category Item Styles
   categoryItem: {
     flex: 1,
     alignItems: 'center',
@@ -358,53 +357,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#999',
-  },
-  
-  // Bottom Navigation Styles
-  bottomNavigation: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    zIndex: 9999,
-  },
-
-  navButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 999,
-    backgroundColor: "#ffffff",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    minWidth: 90,
-  },
-
-  navButtonActive: {
-    backgroundColor: COLORS.primaryThemeColor || "#4CAF50",
-  },
-
-  navPressed: {
-    transform: [{ scale: 0.97 }],
-    opacity: 0.95,
-  },
-
-  navLabel: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: "#333",
-  },
-
-  navLabelActive: {
-    color: "#ffffff",
   },
 });
 

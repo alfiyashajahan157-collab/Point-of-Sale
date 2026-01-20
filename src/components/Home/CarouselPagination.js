@@ -1,11 +1,12 @@
-import { View, StyleSheet, Dimensions, Image } from 'react-native'
+import { View, StyleSheet, Image, useWindowDimensions } from 'react-native'
 import React, { useState } from 'react'
 import Carousel, { Pagination } from 'react-native-snap-carousel';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
 const CarouselPagination = () => {
     const [activeSlide, setActiveSlide] = useState(0);
+    const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+    const isTablet = screenWidth >= 600;
+    
     const data = [
         { image: require('@assets/images/Home/Banner/sildeshow 1.png') },
         { image: require('@assets/images/Home/Banner/sildeshow 2.png') },
@@ -13,7 +14,12 @@ const CarouselPagination = () => {
         { image: require('@assets/images/Home/Banner/sildeshow 4.png') },
         { image: require('@assets/images/Home/Banner/sildeshow 5.png') }
     ];
-    const carouselMargin = 8;
+    
+    // Responsive margins and sizes
+    const carouselMargin = isTablet ? 20 : 8;
+    const imageHeight = isTablet ? screenHeight * 0.22 : screenHeight * 0.25;
+    const paginationTop = isTablet ? screenHeight * 0.14 : screenHeight * 0.16;
+    const dotSize = isTablet ? 10 : 8;
 
     return (
         <View>
@@ -21,7 +27,16 @@ const CarouselPagination = () => {
                 data={data}
                 renderItem={({ item }) => (
                     <View style={styles.item}>
-                        <Image source={item.image} style={styles.image} />
+                        <Image 
+                            source={item.image} 
+                            style={[
+                                styles.image, 
+                                { 
+                                    height: imageHeight,
+                                    borderRadius: isTablet ? 16 : 12,
+                                }
+                            ]} 
+                        />
                     </View>
                 )}
                 sliderWidth={screenWidth - 2 * carouselMargin}
@@ -32,16 +47,19 @@ const CarouselPagination = () => {
                 autoplayDelay={500}
                 enableMomentum={false}
                 lockScrollWhileSnapping={true}
-                containerCustomStyle={styles.carouselContainer}
+                containerCustomStyle={[
+                    styles.carouselContainer,
+                    { marginHorizontal: carouselMargin }
+                ]}
                 autoplayInterval={3000}
                 onSnapToItem={(index) => setActiveSlide(index)}
             />
-            <View style={styles.paginationContainer}>
+            <View style={[styles.paginationContainer, { top: paginationTop }]}>
                 <Pagination
                     dotsLength={data.length}
                     activeDotIndex={activeSlide}
                     containerStyle={styles.paginationDotsContainer}
-                    dotStyle={styles.paginationDot}
+                    dotStyle={[styles.paginationDot, { height: dotSize, borderRadius: dotSize / 2 }]}
                     inactiveDotOpacity={0.4}
                     inactiveDotScale={0.6}
                 />
@@ -55,19 +73,15 @@ export default CarouselPagination
 const styles = StyleSheet.create({
     image: {
         width: '100%',
-        height: screenHeight * 0.25,
-        borderRadius: 12,
         borderWidth: 0,
-        marginTop: -10, // Move up less aggressively
+        marginTop: -10,
     },
     carouselContainer: {
-        marginHorizontal: 8,
         marginVertical: 0,
-        marginTop: -12, // Move up less aggressively
+        marginTop: -12,
     },
     paginationContainer: {
         position: 'absolute',
-        top: screenHeight * 0.16,
         width: '100%',
         alignItems: 'center',
     },
@@ -76,8 +90,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
     },
     paginationDot: {
-        height: 8,
-        borderRadius: 4,
         marginHorizontal: 6,
         backgroundColor: '#5D5FEE',
     },
