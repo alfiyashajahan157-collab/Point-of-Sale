@@ -18,6 +18,7 @@ import { useProductStore } from '@stores/product';
 
 const ProductsScreen = ({ navigation, route }) => {
   const categoryId = route?.params?.categoryId || '';
+  const autoFocus = route?.params?.autoFocus || false;
   useEffect(() => {
     console.log('ProductsScreen: categoryId:', categoryId);
   }, [categoryId]);
@@ -119,6 +120,7 @@ const ProductsScreen = ({ navigation, route }) => {
         placeholder="Search Products"
         onChangeText={handleSearchTextChange}
         value={searchText}
+        autoFocus={autoFocus}
       />
       <RoundedContainer>
         {renderProducts()}

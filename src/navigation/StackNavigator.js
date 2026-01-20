@@ -13,6 +13,7 @@ import { PrivacyPolicy } from "@screens/Auth";
 import LoginScreenOdoo from "@screens/Auth/LoginScreenOdoo";
 import CategoriesScreen from "@screens";
 import Scanner from "@components/Scanner";
+import SearchOptionsScreen from "@screens/Home/SearchOptionsScreen";
 // import Barcode from "@components/Scanner"; // Uncomment and fix if Barcode is a named export or separate file
 import SalesOrderChoice from "@screens/Home/Sections/Customer/SalesOrderChoice";
 import POSRegister from "@screens/Home/Sections/Customer/POSRegister";
@@ -144,9 +145,14 @@ const StackNavigator = () => {
         component={Scanner}
         options={{ headerShown: false }}
       />
+      <Stack.Screen
+        name="SearchOptionsScreen"
+        component={SearchOptionsScreen}
+        options={{ headerShown: false }}
+      />
 
 
-    
+
 
       <Stack.Screen
         name="MapViewScreen"

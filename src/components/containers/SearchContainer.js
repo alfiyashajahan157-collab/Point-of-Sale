@@ -3,7 +3,7 @@ import { View, TextInput, StyleSheet } from 'react-native';
 import { AntDesign } from '@expo/vector-icons';
 import { COLORS, FONT_FAMILY } from '@constants/theme';
 
-const SearchContainer = ({ placeholder, onChangeText }) => {
+const SearchContainer = ({ placeholder, onChangeText, value, autoFocus }) => {
     return (
         <View style={styles.searchContainer}>
             <View style={styles.searchInput}>
@@ -13,6 +13,8 @@ const SearchContainer = ({ placeholder, onChangeText }) => {
                     placeholder={placeholder}
                     placeholderTextColor="#888"
                     onChangeText={onChangeText}
+                    value={value}
+                    autoFocus={autoFocus}
                 />
             </View>
         </View>

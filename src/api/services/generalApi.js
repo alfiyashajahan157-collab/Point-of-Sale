@@ -306,9 +306,9 @@ export const fetchProductsOdoo = async ({ offset = 0, limit = 50, searchText = "
       domain.push(["description_sale", "ilike", term]);
     }
     
-    // Filter by POS category (pos_categ_ids is many2many field)
+    // Filter by product category (categ_id is many2one field to product.category)
     if (categoryId) {
-      domain.push(["pos_categ_ids", "in", [parseInt(categoryId)]]);
+      domain.push(["categ_id", "=", parseInt(categoryId)]);
     }
 
     const response = await axios.post(
@@ -409,21 +409,21 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
       domain = [["name", "ilike", term]]; // Filter by category name
     }
 
-    // API call to Odoo to fetch POS categories (pos.category has image fields)
+    // API call to Odoo to fetch Product categories (product.category)
     const response = await axios.post(
       `${ODOO_BASE_URL}/web/dataset/call_kw`,
       {
         jsonrpc: "2.0",
         method: "call",
         params: {
-          model: "pos.category", // POS category model with images
+          model: "product.category", // Product category model
           method: "search_read",
           args: [domain],
           kwargs: {
-            fields: ["id", "name", "parent_id", "image_128"], // pos.category has image_128
+            fields: ["id", "name", "parent_id", "complete_name"],
             offset,
             limit,
-            order: "sequence, name asc",
+            order: "name asc",
           },
         },
       },
@@ -434,36 +434,26 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
 
     // Handle any errors from the Odoo API
     if (response.data.error) {
-      console.log("Odoo JSON-RPC error (pos.category):", response.data.error);
+      console.log("Odoo JSON-RPC error (product.category):", response.data.error);
       throw new Error("Odoo JSON-RPC error");
     }
 
-    // Map the categories into a usable format with image URL
+    // Map the categories into a usable format
     const categories = response.data.result || [];
     return categories.map(category => {
-      // pos.category has image_128 field - Odoo returns `false` for empty images
-      const base64Image = category.image_128 && category.image_128 !== false 
-        ? category.image_128 
-        : null;
-      
-      // Construct image URL from base64 data
-      let image_url = null;
-      if (base64Image && typeof base64Image === 'string' && base64Image.length > 0) {
-        image_url = `data:image/png;base64,${base64Image}`;
-      }
-
       return {
         _id: category.id,
         id: category.id,
         name: category.name || "",
         category_name: category.name || "",
+        complete_name: category.complete_name || category.name || "",
         parent_id: category.parent_id || null,
-        image_url: image_url,
-        has_image: !!base64Image,
+        image_url: null, // product.category doesn't have image by default
+        has_image: false,
       };
     });
   } catch (error) {
-    console.error("Error fetching POS categories from Odoo:", error);
+    console.error("Error fetching product categories from Odoo:", error);
     throw error;
   }
 };

@@ -503,9 +503,9 @@ const ProductDetail = ({ navigation, route }) => {
             <View style={{ flex: 1 }} />
             {route?.params?.fromPOS ? (
               <Button title={'Add to POS Cart'} onPress={handleAddToPosCart} />
-            ) : fromCustomerDetails && Object.keys(fromCustomerDetails).length > 0 ? (
+            ) : (
               <Button title={'Add to Cart'} onPress={handleAddProduct} />
-            ) : null}
+            )}
           </>
         ) : (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>

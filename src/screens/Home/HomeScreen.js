@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   Image,
   useWindowDimensions,
+  TextInput,
+  Pressable,
 } from "react-native";
 import {
   CarouselPagination,
@@ -25,6 +27,20 @@ import { useDataFetching, useLoader } from "@hooks";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useAuthStore } from '@stores/auth';
 import { OverlayLoader } from "@components/Loader";
+
+// Search Bar Component
+const SearchBar = ({ onPress, isTablet }) => {
+  return (
+    <Pressable onPress={onPress} style={[styles.searchContainer, isTablet && styles.searchContainerTablet]}>
+      <View style={[styles.searchBar, isTablet && styles.searchBarTablet]}>
+        <Text style={styles.searchIconText}>🔍</Text>
+        <Text style={[styles.searchPlaceholder, isTablet && { fontSize: 16 }]}>
+          What are you looking for?
+        </Text>
+      </View>
+    </Pressable>
+  );
+};
 
 // Category Item Component with responsive sizing
 const CategoryItem = ({ item, onPress, isTablet }) => {
@@ -209,32 +225,41 @@ const HomeScreen = ({ navigation }) => {
     navigation.navigate(screenName);
   };
 
+  // Handle search press - navigate to SearchOptions screen
+  const handleSearchPress = () => {
+    navigation.navigate('SearchOptionsScreen');
+  };
+
   // Responsive snap points
   const snapPoints = useMemo(() => {
     if (isTablet) {
-      return ["43%", "75%"];
+      return ["32%", "75%"];
     }
     if (height < 700) {
-      return ["47%", "80%"];
+      return ["36%", "80%"];
     } else if (height < 800) {
-      return ["49%", "82%"];
+      return ["38%", "82%"];
     } else if (height < 900) {
-      return ["51%", "85%"];
+      return ["40%", "85%"];
     } else {
-      return ["53%", "90%"];
+      return ["42%", "90%"];
     }
   }, [height, isTablet]);
 
   const [detailLoading] = useLoader(false);
 
   // Responsive styles
-  const carouselMargin = isTablet ? { marginTop: -40, marginBottom: -12 } : { marginTop: -48, marginBottom: -16 };
+  const carouselMargin = isTablet ? { marginTop: 5, marginBottom: -12 } : { marginTop: 5, marginBottom: -16 };
   const buttonsMargin = isTablet ? { marginTop: 28, marginBottom: 16, paddingHorizontal: 40 } : { marginTop: 24, marginBottom: 12, paddingHorizontal: 20 };
 
   return (
     <SafeAreaView backgroundColor={COLORS.primaryThemeColor}>
       <RoundedContainer>
         <Header />
+        
+        {/* Search Bar */}
+        <SearchBar onPress={handleSearchPress} isTablet={isTablet} />
+        
         <View style={carouselMargin}>
           <CarouselPagination />
         </View>
@@ -357,6 +382,52 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#999',
+  },
+
+  // Search Bar Styles
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginTop: -58,
+    marginBottom: 8,
+  },
+  
+  searchContainerTablet: {
+    paddingHorizontal: 24,
+    marginTop: -56,
+    marginBottom: 10,
+  },
+  
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  
+  searchBarTablet: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 30,
+  },
+  
+  searchIconText: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  
+  searchPlaceholder: {
+    fontSize: 14,
+    color: '#999',
+    flex: 1,
   },
 });
 
