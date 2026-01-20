@@ -125,7 +125,9 @@ const TakeoutDelivery = ({ navigation, route }) => {
 
   const handleDecrement = (item) => {
     if (item.qty <= 1) {
-      removeProduct(item.id);
+      // Use the actual product id from rawItem to ensure correct removal
+      const productId = item.rawItem?.id || item.id;
+      removeProduct(productId);
     } else {
       const newQty = item.qty - 1;
       addProduct({ ...item.rawItem, quantity: newQty, qty: newQty });
@@ -222,8 +224,8 @@ const TakeoutDelivery = ({ navigation, route }) => {
     return (
       <TouchableOpacity onPress={() => { setSelectedLine(prev => (prev && String(prev.id) === String(item.id) ? null : item)); }} style={{ flexDirection: 'row', paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#f0f0f0', backgroundColor: isSelected ? '#eef6ff' : '#fff', borderLeftWidth: isSelected ? 4 : 0, borderLeftColor: isSelected ? '#2563eb' : 'transparent' }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-        <Image 
-          source={{ uri: item.rawItem?.image_url || item.rawItem?.image_128 || 'https://via.placeholder.com/60' }}
+        <Image
+          source={{ uri: item.rawItem?.imageUrl || item.rawItem?.image_url || item.rawItem?.image_128 || 'https://via.placeholder.com/60' }}
           style={{ width: 60, height: 60, borderRadius: 8, backgroundColor: '#f5f5f5' }}
           resizeMode="cover"
         />

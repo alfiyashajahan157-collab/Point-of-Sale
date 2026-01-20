@@ -420,7 +420,7 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
           method: "search_read",
           args: [domain],
           kwargs: {
-            fields: ["id", "name", "parent_id", "complete_name"],
+            fields: ["id", "name", "parent_id", "complete_name", "image_128"],
             offset,
             limit,
             order: "name asc",
@@ -441,6 +441,13 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
     // Map the categories into a usable format
     const categories = response.data.result || [];
     return categories.map(category => {
+      // Build image URL if image_128 exists
+      let imageUrl = null;
+      if (category.image_128 && category.image_128 !== false) {
+        // Odoo returns base64 encoded images, convert to data URI
+        imageUrl = `data:image/png;base64,${category.image_128}`;
+      }
+
       return {
         _id: category.id,
         id: category.id,
@@ -448,8 +455,8 @@ export const fetchCategoriesOdoo = async ({ offset = 0, limit = 50, searchText =
         category_name: category.name || "",
         complete_name: category.complete_name || category.name || "",
         parent_id: category.parent_id || null,
-        image_url: null, // product.category doesn't have image by default
-        has_image: false,
+        image_url: imageUrl,
+        has_image: imageUrl !== null,
       };
     });
   } catch (error) {

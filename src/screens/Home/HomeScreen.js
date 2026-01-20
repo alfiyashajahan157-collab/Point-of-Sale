@@ -71,11 +71,12 @@ const CategoryItem = ({ item, onPress, isTablet }) => {
   const fontSize = isTablet ? 14 : 12;
 
   return (
-    <TouchableOpacity 
-      onPress={onPress} 
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
       style={[
-        styles.categoryItem, 
-        { minHeight: itemMinHeight, margin: isTablet ? 10 : 6, padding: isTablet ? 16 : 12 }
+        styles.categoryItem,
+        { minHeight: itemMinHeight, margin: isTablet ? 10 : 6, padding: isTablet ? 18 : 16 }
       ]}
     >
       {imageLoading && hasValidImage && (
@@ -327,15 +328,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     margin: 6,
-    padding: 12,
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 16,
     backgroundColor: "#ffffff",
     minHeight: 110,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
   },
   
   imageLoader: {
@@ -349,7 +352,10 @@ const styles = StyleSheet.create({
     height: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 8,
   },
   
   categoryImage: {
@@ -367,9 +373,10 @@ const styles = StyleSheet.create({
   categoryName: {
     fontSize: 12,
     textAlign: 'center',
-    color: COLORS.primaryThemeColor || '#1316c5',
+    color: '#2c3e50',
     fontFamily: FONT_FAMILY?.urbanistBold || 'System',
     fontWeight: '700',
+    lineHeight: 16,
   },
   
   emptyContainer: {
@@ -387,13 +394,13 @@ const styles = StyleSheet.create({
   // Search Bar Styles
   searchContainer: {
     paddingHorizontal: 16,
-    marginTop: -58,
+    marginTop: -78,
     marginBottom: 8,
   },
-  
+
   searchContainerTablet: {
     paddingHorizontal: 24,
-    marginTop: -56,
+    marginTop: -76,
     marginBottom: 10,
   },
   
@@ -401,16 +408,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 25,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 28,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 5,
+    borderWidth: 0,
   },
   
   searchBarTablet: {
@@ -420,14 +426,16 @@ const styles = StyleSheet.create({
   },
   
   searchIconText: {
-    fontSize: 18,
-    marginRight: 10,
+    fontSize: 20,
+    marginRight: 12,
+    opacity: 0.6,
   },
   
   searchPlaceholder: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: 15,
+    color: '#6c757d',
     flex: 1,
+    fontFamily: FONT_FAMILY?.urbanistMedium || 'System',
   },
 });
 
